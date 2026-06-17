@@ -45,6 +45,11 @@ class T5TextConditioner(nn.Module):
         self.text_aligner = TextAdapter(adapter_layers, hidden_size, num_heads, dropout=dropout)
         self.pool_proj = nn.Sequential(nn.LayerNorm(hidden_size), nn.Linear(hidden_size, hidden_size))
 
+    def train(self, mode=True):
+        super().train(mode)
+        self.t5_model.eval()
+        return self
+
     def mask_text(self, text_list, force_mask=False):
         bsz = len(text_list)
         if force_mask:
@@ -133,7 +138,7 @@ class HiFlowSAEModel(nn.Module):
         x = x.reshape(bsz, patch_len * self.time_patch, self.vae_dim)
         return x[:, :target_len]
 
-    def forward(self, x, timesteps, labels, m_lens, force_mask=False):
+    def forward(self, x, timesteps, labels, m_lens, force_mask=False, scale_value=None):
         device = x.device
         m_lens = m_lens.to(device)
         timesteps = timesteps.to(device)
@@ -146,11 +151,16 @@ class HiFlowSAEModel(nn.Module):
         word_emb = word_emb.to(device)
         text_padding_mask = text_padding_mask.to(device)
         pooled = pooled.to(device)
-        motion_ids = torch.arange(patch_len, device=device).view(1, patch_len, 1).expand(x.shape[0], -1, -1)
-        text_ids = torch.zeros(x.shape[0], word_emb.shape[1], 1, dtype=torch.long, device=device)
+        motion_ids = torch.arange(patch_len, device=device, dtype=torch.float32).view(1, patch_len, 1).expand(x.shape[0], -1, -1)
+        scale_values = None
+        if scale_value is not None:
+            scale_values = torch.full((x.shape[0],), float(scale_value), device=device, dtype=torch.float32)
+            motion_ids = motion_ids / scale_values.view(-1, 1, 1).clamp_min(1e-6)
+        text_ids = torch.zeros(x.shape[0], word_emb.shape[1], 1, dtype=torch.float32, device=device)
         out = self.transformer(
             x_patch, timesteps, word_emb, pooled, motion_ids, text_ids,
             motion_mask=motion_padding_mask, text_mask=text_padding_mask,
+            scale_values=scale_values,
         )
         return self.unpatch(out, target_len)
 
@@ -225,12 +235,14 @@ class HiFlowSAE(nn.Module):
             latent_lens = torch.div(m_lens, self.unit_length, rounding_mode="floor").clamp(min=1, max=seq_len)
             valid_mask = lengths_to_mask(latent_lens, seq_len).to(x.device)
             x = torch.where(valid_mask.unsqueeze(-1), x, torch.zeros_like(x))
+            full_noise = torch.randn_like(x)
+            full_noise = torch.where(valid_mask.unsqueeze(-1), full_noise, torch.zeros_like(full_noise))
 
             stage_id = self.scheduler.sample_stage(x.device)
             stage_lens = self._stage_lens(latent_lens, stage_id)
             latent_stage, stage_mask = self._make_stage_latent(x, latent_lens, stage_lens)
+            noise_stage, _ = self._make_stage_latent(full_noise, latent_lens, stage_lens)
             latent_stage = latent_stage.float()
-            noise_stage = torch.randn_like(latent_stage)
             noise_stage = torch.where(stage_mask.unsqueeze(-1), noise_stage, torch.zeros_like(noise_stage))
 
             if stage_id == 0:
@@ -243,14 +255,14 @@ class HiFlowSAE(nn.Module):
             start_sigma, end_sigma = self.scheduler.stage_sigmas()[stage_id]
             x0 = start_sigma * noise_stage + (1.0 - start_sigma) * up_latent.float()
             x1 = end_sigma * noise_stage + (1.0 - end_sigma) * latent_stage
-            ratio = self.scheduler.sample_ratio(bsz, x.device).float()
-            ratio_view = ratio.view(bsz, 1, 1)
+            time_steps, ratios = self.scheduler.sample_training_timesteps(stage_id, bsz, x.device)
+            ratio_view = ratios.view(bsz, 1, 1)
             xt = ratio_view * x0 + (1.0 - ratio_view) * x1
             target = (x1 - x0).float()
             xt = torch.where(stage_mask.unsqueeze(-1), xt.float(), torch.zeros_like(xt).float())
             target = torch.where(stage_mask.unsqueeze(-1), target, torch.zeros_like(target))
 
-            pred = self.model(xt, ratio, conds, stage_lens).float()
+            pred = self.model(xt, time_steps, conds, stage_lens, scale_value=self.scales[stage_id]).float()
             pred_finite = torch.isfinite(pred).all()
             target_finite = torch.isfinite(target).all()
             if not bool(pred_finite and target_finite):
@@ -268,40 +280,54 @@ class HiFlowSAE(nn.Module):
             }
             return stage_loss, loss_dict
 
-    def _denoise_stage(self, x, labels, latent_lens, steps, cfg, start_ratio=1.0, end_ratio=0.0):
-        def model_fn(cur_x, t):
-            pred = self.model(cur_x, t, labels, latent_lens, force_mask=False)
+    def _denoise_stage(self, x, labels, latent_lens, stage_id, steps, cfg):
+        time_steps, sigmas = self.scheduler.set_timesteps(steps, stage_id, x.device)
+        scale_value = self.scales[stage_id]
+        for i in range(len(sigmas) - 1):
+            t = time_steps[i].expand(x.shape[0])
+            pred = self.model(x, t, labels, latent_lens, force_mask=False, scale_value=scale_value)
             if cfg == 1.0:
-                return pred
-            uncond = self.model(cur_x, t, labels, latent_lens, force_mask=True)
-            return uncond + cfg * (pred - uncond)
-        return self.scheduler.euler_interval(model_fn, x, start_ratio=start_ratio, end_ratio=end_ratio, steps=steps)
+                guided = pred
+            else:
+                uncond = self.model(x, t, labels, latent_lens, force_mask=True, scale_value=scale_value)
+                guided = uncond + cfg * (pred - uncond)
+            x = x + (sigmas[i] - sigmas[i + 1]) * guided
+        return x
 
     @torch.no_grad()
     def generate(self, bsz, latent_lens, labels=None, cfg=1.0, device=None, steps=None, temperature=1.0):
         device = device or latent_lens.device
         steps = steps or self.sample_steps
         max_len = self.seq_len
-        x = None
+        full_noise = torch.randn(bsz, max_len, self.token_embed_dim, device=device) * temperature
+        full_mask = lengths_to_mask(latent_lens.clamp(max=max_len), max_len).to(device)
+        full_noise = torch.where(full_mask.unsqueeze(-1), full_noise, torch.zeros_like(full_noise))
+        latents = None
+        prev_noise = None
         for stage_id, _scale in enumerate(self.scales):
             stage_lens = self._stage_lens(latent_lens, stage_id)
             stage_len = int(stage_lens.max().item())
             stage_mask = lengths_to_mask(stage_lens, stage_len).to(device)
-            noise = torch.randn(bsz, stage_len, self.token_embed_dim, device=device) * temperature
+            noise = interpolate_latents(full_noise, size=stage_len)
             noise = torch.where(stage_mask.unsqueeze(-1), noise, torch.zeros_like(noise))
+            start_sigma, end_sigma = self.scheduler.stage_sigmas()[stage_id]
 
             if stage_id == 0:
-                up_latent = torch.zeros_like(noise)
+                x_stage = noise
             else:
                 prev_lens = self._stage_lens(latent_lens, stage_id - 1)
-                up_latent = self._upsample_stage(x, prev_lens, stage_lens)
+                prev_end_sigma = self.scheduler.end_sigmas[stage_id - 1]
+                denoised = latents - prev_end_sigma * prev_noise
+                up_latent = self._upsample_stage(denoised, prev_lens, stage_lens)
+                correction = (1.0 - start_sigma) / max(1.0 - prev_end_sigma, 1e-8)
+                x_stage = correction * up_latent + start_sigma * noise
 
-            start_sigma, end_sigma = self.scheduler.stage_sigmas()[stage_id]
-            x_stage = start_sigma * noise + (1.0 - start_sigma) * up_latent
-            x_stage = self._denoise_stage(x_stage, labels, stage_lens, steps, cfg,
-                                          start_ratio=1.0, end_ratio=0.0)
-            x = torch.where(stage_mask.unsqueeze(-1), x_stage, torch.zeros_like(x_stage))
+            stage_steps = self.scheduler.timesteps_per_stage(stage_id, steps)
+            x_stage = self._denoise_stage(x_stage, labels, stage_lens, stage_id, stage_steps, cfg)
+            latents = torch.where(stage_mask.unsqueeze(-1), x_stage, torch.zeros_like(x_stage))
+            prev_noise = noise
 
+        x = latents
         if x.shape[1] != max_len:
             x = interpolate_latents(x, size=max_len)
         mask = lengths_to_mask(latent_lens.clamp(max=max_len), max_len).to(device)

@@ -56,7 +56,8 @@ def arg_parse(is_train=False):
     parser.add_argument('--acc_ratio', type=float, default=5.0)
 
     ## eval / saving
-    parser.add_argument('--eval_every_e', type=int, default=100)
+    parser.add_argument('--eval_every_e', type=int, default=5)
+    parser.add_argument('--eval_start_epoch', type=int, default=100)
     parser.add_argument('--save_every_e', type=int, default=150)
 
     opt = parser.parse_args()

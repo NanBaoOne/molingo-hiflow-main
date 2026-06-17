@@ -264,7 +264,8 @@ class MoLingoTrainer:
 
             epoch += 1
 
-            if epoch >= 1 and epoch % self.opt.eval_every_e == 0:
+            eval_start_epoch = getattr(self.opt, "eval_start_epoch", 100)
+            if epoch >= eval_start_epoch and epoch % self.opt.eval_every_e == 0:
                 best_fid_before = best_fid_tmr
                 best_top1_before = best_top1_tmr
                 best_top2_before = best_top2_tmr
