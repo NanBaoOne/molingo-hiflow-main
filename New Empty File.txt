@@ -1,0 +1,19 @@
+cd /mnt/user/lh3/molingo-hiflow
+
+git config --global --add safe.directory /mnt/user/lh3/molingo-hiflow
+
+git status
+
+git config --global user.name "NanBaoOne"
+git config --global user.email "915193873@qq.com"
+
+git add .
+git commit -m "first commit"
+
+git branch -M main
+
+git remote add origin https://github.com/NanBaoOne/molingo-hiflow-main.git
+
+git remote -v
+
+git push -u origin main

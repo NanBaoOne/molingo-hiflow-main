@@ -1,0 +1,28 @@
+
+# IDE
+.idea/
+
+# Python cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# logs / temp
+*.log
+tmp/
+temp/
+outputs/
+output/
+runs/
+checkpoints/
+
+# model weights / large ML files
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.onnx
+*.pkl
+*.npy
+*.npz
