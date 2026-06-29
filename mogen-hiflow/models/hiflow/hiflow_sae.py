@@ -35,7 +35,7 @@ class T5TextConditioner(nn.Module):
         super().__init__()
         self.t5_max_len = t5_max_len
         self.label_drop_prob = label_drop_prob
-        self.dummy_text = "This is a null prompt with no semantic meaning."
+        self.dummy_text = ""
         self.t5_tok = T5Tokenizer.from_pretrained("t5-large")
         self.t5_model = T5EncoderModel.from_pretrained("t5-large")
         self.t5_model.eval()
@@ -268,7 +268,11 @@ class HiFlowSAE(nn.Module):
             if not bool(pred_finite and target_finite):
                 pred = torch.nan_to_num(pred, nan=0.0, posinf=0.0, neginf=0.0)
                 target = torch.nan_to_num(target, nan=0.0, posinf=0.0, neginf=0.0)
-            raw_stage_loss = F.mse_loss(pred[stage_mask], target[stage_mask])
+            sq_error = (pred - target).pow(2).mean(dim=-1)
+            # Match the full velocity field on valid sequence positions, normalized per sample
+            # so shorter motions do not get underweighted by padding or batch-level token counts.
+            per_sample_loss = (sq_error * stage_mask.float()).sum(dim=1) / stage_lens.float().clamp_min(1.0)
+            raw_stage_loss = per_sample_loss.mean()
             loss_finite = torch.isfinite(raw_stage_loss.detach())
             stage_loss = torch.nan_to_num(raw_stage_loss, nan=0.0, posinf=0.0, neginf=0.0)
             loss_dict = {
@@ -280,7 +284,7 @@ class HiFlowSAE(nn.Module):
             }
             return stage_loss, loss_dict
 
-    def _denoise_stage(self, x, labels, latent_lens, stage_id, steps, cfg):
+    def _denoise_stage(self, x, labels, latent_lens, stage_mask, stage_id, steps, cfg, cfg_interval):
         time_steps, sigmas = self.scheduler.set_timesteps(steps, stage_id, x.device)
         scale_value = self.scales[stage_id]
         for i in range(len(sigmas) - 1):
@@ -291,16 +295,23 @@ class HiFlowSAE(nn.Module):
             else:
                 uncond = self.model(x, t, labels, latent_lens, force_mask=True, scale_value=scale_value)
                 guided = uncond + cfg * (pred - uncond)
+                if sigmas[i] < cfg_interval[0] or sigmas[i] > cfg_interval[1]:
+                    guided = pred
             x = x + (sigmas[i] - sigmas[i + 1]) * guided
+            x = torch.where(stage_mask.unsqueeze(-1), x, torch.zeros_like(x))
         return x
 
     @torch.no_grad()
-    def generate(self, bsz, latent_lens, labels=None, cfg=1.0, device=None, steps=None, temperature=1.0):
+    def generate(self, bsz, latent_lens, labels=None, cfg=1.0, device=None, steps=None,
+                 temperature=1.0, cfg_interval=(0.0, 1.0)):
         device = device or latent_lens.device
         steps = steps or self.sample_steps
-        max_len = self.seq_len
+        latent_lens = latent_lens.to(device).long().clamp(min=1, max=self.seq_len)
+        max_len = int(latent_lens.max().item())
+        if labels is None:
+            labels = [""] * bsz
         full_noise = torch.randn(bsz, max_len, self.token_embed_dim, device=device) * temperature
-        full_mask = lengths_to_mask(latent_lens.clamp(max=max_len), max_len).to(device)
+        full_mask = lengths_to_mask(latent_lens, max_len).to(device)
         full_noise = torch.where(full_mask.unsqueeze(-1), full_noise, torch.zeros_like(full_noise))
         latents = None
         prev_noise = None
@@ -308,7 +319,7 @@ class HiFlowSAE(nn.Module):
             stage_lens = self._stage_lens(latent_lens, stage_id)
             stage_len = int(stage_lens.max().item())
             stage_mask = lengths_to_mask(stage_lens, stage_len).to(device)
-            noise = interpolate_latents(full_noise, size=stage_len)
+            noise, _ = self._make_stage_latent(full_noise, latent_lens, stage_lens)
             noise = torch.where(stage_mask.unsqueeze(-1), noise, torch.zeros_like(noise))
             start_sigma, end_sigma = self.scheduler.stage_sigmas()[stage_id]
 
@@ -323,7 +334,9 @@ class HiFlowSAE(nn.Module):
                 x_stage = correction * up_latent + start_sigma * noise
 
             stage_steps = self.scheduler.timesteps_per_stage(stage_id, steps)
-            x_stage = self._denoise_stage(x_stage, labels, stage_lens, stage_id, stage_steps, cfg)
+            x_stage = self._denoise_stage(
+                x_stage, labels, stage_lens, stage_mask, stage_id, stage_steps, cfg, cfg_interval
+            )
             latents = torch.where(stage_mask.unsqueeze(-1), x_stage, torch.zeros_like(x_stage))
             prev_noise = noise
 
@@ -335,12 +348,16 @@ class HiFlowSAE(nn.Module):
 
     @torch.no_grad()
     def sample_tokens(self, bsz, m_lens, cfg=1.0, cfg_schedule="linear", labels=None,
-                      temperature=1.0, device=None, acc_ratio=1):
+                      temperature=1.0, device=None, acc_ratio=1, cfg_interval=(0.0, 1.0)):
         device = device or m_lens.device
         latent_lens = torch.div(m_lens, self.unit_length, rounding_mode="floor").to(device)
         steps = max(1, int(self.sample_steps if acc_ratio <= 1 else self.seq_len // acc_ratio))
         return self.generate(bsz, latent_lens, labels=labels, cfg=cfg, device=device,
-                             steps=steps, temperature=temperature)
+                             steps=steps, temperature=temperature, cfg_interval=cfg_interval)
+
+    def train_forward(self, x, conds, m_lens):
+        loss, loss_dict = self.forward(x, conds, m_lens)
+        return loss_dict
 
 
 def hiflow_tiny():

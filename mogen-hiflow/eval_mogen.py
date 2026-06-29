@@ -19,8 +19,6 @@ import mogen.models.hiflow.hiflow_sae as hiflow_models
 from mogen.utils.fixseed import fixseed
 from mogen.utils.get_opt import get_opt
 from mogen.utils.eval_utils import load_ms_evaluators
-from mogen.models.eval.tmr_eval_wrapper import TMREvaluatorModelWrapper
-from mogen.models.eval.mardm_evaluators import MARDMEvaluators
 from mogen.utils.word_vectorizer import WordVectorizer
 
 from mogen.data.t2m_dataset import Text2MotionDatasetEval, collate_fn
@@ -119,6 +117,8 @@ if __name__ == '__main__':
 
     # eval wrapper initialization
     if not dim_pose == 272: # load evaluators for MARDM-67 and TMR-263
+        from mogen.models.eval.tmr_eval_wrapper import TMREvaluatorModelWrapper
+        from mogen.models.eval.mardm_evaluators import MARDMEvaluators
         tmr_wrapper = TMREvaluatorModelWrapper(device=device)
         mardm_wrapper = MARDMEvaluators('t2m', device=device)
     else: # load evaluator for MS-272

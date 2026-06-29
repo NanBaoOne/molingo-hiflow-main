@@ -23,8 +23,10 @@ def arg_parse(is_train=False):
     ## optimisation
     parser.add_argument('--max_epoch', type=int, default=100000, help='maximum number of epochs for training')
     parser.add_argument('--lr', type=float, default=2e-4, help='learning rate')
-    parser.add_argument('--base_lr', type=float, default=5e-5, help='base learning rate')
-    parser.add_argument('--warm_up_iter', type=int, default=2000, help='number of total iterations for warmup')
+    parser.add_argument('--base_lr', type=float, default=2e-4, help='base learning rate')
+    parser.add_argument('--warmup_epochs', type=int, default=200, help='number of epochs for lr warmup')
+    parser.add_argument('--warm_up_iter', type=int, default=None,
+                        help='deprecated iteration warmup override; scheduler uses warmup_epochs')
     parser.add_argument('--lr_schedule', type=str, default='cosine', help='lr scheduler feeding adjust_learning_rate')
     parser.add_argument('--seed', type=int, default=3407)
 
@@ -56,9 +58,9 @@ def arg_parse(is_train=False):
     parser.add_argument('--acc_ratio', type=float, default=5.0)
 
     ## eval / saving
-    parser.add_argument('--eval_every_e', type=int, default=5)
-    parser.add_argument('--eval_start_epoch', type=int, default=100)
-    parser.add_argument('--save_every_e', type=int, default=150)
+    parser.add_argument('--eval_every_e', type=int, default=10)
+    parser.add_argument('--eval_start_epoch', type=int, default=200)
+    parser.add_argument('--save_every_e', type=int, default=200)
 
     opt = parser.parse_args()
 

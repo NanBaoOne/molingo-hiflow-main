@@ -1,11 +1,11 @@
 python train_molingo.py \
   --dataset_name ms \
   --batch_size 64 \
-  --exp_name bs64 \
+  --exp_name bs64_d0619 \
   --model_size large \
   --second_stage hiflow \
   --checkpoints_dir checkpoints \
   --sae_name sae_ms_bs512_lr1p5e4_l2_2_32_1024_d3_kl_1e-05_zero_cos_0.001 \
   --hiflow_scales 0.3,0.6,1.0 \
-  --eval_every_e 5 \
+  --eval_every_e 10 \
   --time_patch 2
