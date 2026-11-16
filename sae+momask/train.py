@@ -281,7 +281,11 @@ def train(a):
         vq_digest = None
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(params, lr=a.lr, betas=(0.9, 0.99), weight_decay=a.weight_decay)
-    scaler = torch.amp.GradScaler('cuda', enabled=a.precision == 'fp16')
+    if hasattr(torch.amp, 'GradScaler'):
+        scaler = torch.amp.GradScaler('cuda', enabled=a.precision == 'fp16')
+    else:
+        # PyTorch 2.0/2.1/2.2 expose GradScaler under torch.cuda.amp.
+        scaler = torch.cuda.amp.GradScaler(enabled=a.precision == 'fp16')
     start, best, best_fid = 0, math.inf, math.inf
     if ck:
         # Optimizer/scheduler semantics must not silently change on resume.

@@ -5,8 +5,8 @@ cd "$HERE"
 export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
-# Fragmentation control; no forced CUDA memory reservation.
-export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+# Keep PyTorch's default allocator for compatibility with the server environment.
+# Users may explicitly supply allocator options supported by their own build.
 PYTHON="${PYTHON:-python}"
 MODE="${1:-all}"
 SEED="${SEED:-3407}"
