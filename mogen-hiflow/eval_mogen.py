@@ -130,8 +130,9 @@ if __name__ == '__main__':
     if not hasattr(model_opt, 'sae_ckpt_name'):
         model_opt.sae_ckpt_name = 'net_best_fid.ckpt'
     checkpoints_dir = getattr(model_opt, 'checkpoints_dir', 'mogen/checkpoints')
-    vae_opt_path = pjoin(checkpoints_dir, opt.dataset_name, model_opt.sae_name, 'opt.txt')
-    vae_ckpt_path = pjoin(checkpoints_dir, opt.dataset_name, model_opt.sae_name, 'model', model_opt.sae_ckpt_name)
+    vae_dataset = getattr(model_opt, 'vae_dataset_name', None) or opt.dataset_name
+    vae_opt_path = pjoin(checkpoints_dir, vae_dataset, model_opt.sae_name, 'opt.txt')
+    vae_ckpt_path = pjoin(checkpoints_dir, vae_dataset, model_opt.sae_name, 'model', model_opt.sae_ckpt_name)
     vae_opt = get_opt(vae_opt_path, device=device)
     vae_model = load_vae_model(vae_opt, vae_ckpt_path, dim_pose, device=device)
 

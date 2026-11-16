@@ -51,6 +51,8 @@ def arg_parse(is_train=False):
                         help='SAE checkpoint folder name under checkpoints/<dataset>/')
     parser.add_argument('--sae_name', type=str, default=None, help='alias of --vae')
     parser.add_argument('--sae_ckpt_name', type=str, default='net_best_fid.ckpt')
+    parser.add_argument('--vae_dataset_name', type=str, default=None,
+                        help='Dataset name for VAE checkpoint lookup (defaults to --dataset_name)')
     parser.add_argument('--checkpoints_dir', type=str, default='mogen/checkpoints', help='models are saved here')
     parser.add_argument('--std_factor', type=float, default=1.0)
     parser.add_argument('--cfg', type=float, default=4.0)

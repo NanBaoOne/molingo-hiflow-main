@@ -1,0 +1,20 @@
+python mogen-hiflow/train_sae_babel.py \
+  --dataset_name babel \
+  --exp_name bs512_lr1p5e4 \
+  --loss_type l2 \
+  --batch_size 512 \
+  --lr 1.5e-4 \
+  --checkpoints_dir checkpoints \
+  --down_t 1 \
+  --stride_t 2 \
+  --output_emb_width 32 \
+  --width 1024 \
+  --depth 3 \
+  --dilation_growth_rate 3 \
+  --kl_ratio 1e-05 \
+  --cosine_ratio 0.001 \
+  --activation silu \
+  --max_epoch 5000 \
+  --warm_up_iter 1000 \
+  --eval_every_e 50 \
+  --save_every_e 50

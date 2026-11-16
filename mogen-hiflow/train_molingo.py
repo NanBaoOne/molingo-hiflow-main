@@ -82,8 +82,9 @@ if __name__ == "__main__":
     kinematic_chain = paramUtil.t2m_kinematic_chain
 
     # load vae
-    vae_opt_path = pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vae, 'opt.txt')
-    ckpt_path = pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vae, 'model', opt.sae_ckpt_name)
+    vae_dataset = opt.vae_dataset_name if opt.vae_dataset_name else opt.dataset_name
+    vae_opt_path = pjoin(opt.checkpoints_dir, vae_dataset, opt.vae, 'opt.txt')
+    ckpt_path = pjoin(opt.checkpoints_dir, vae_dataset, opt.vae, 'model', opt.sae_ckpt_name)
     vae_opt = get_opt(vae_opt_path, device=opt.device)
 
     vae_model = load_vae_model(vae_opt, ckpt_path, device=opt.device)

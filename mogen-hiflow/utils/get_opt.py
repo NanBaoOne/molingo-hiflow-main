@@ -84,6 +84,15 @@ def get_opt(opt_path, device, **kwargs):
         opt.max_motion_length = max_motion_length
         opt.max_motion_frame = max_motion_frame
         opt.max_motion_token = 55
+    elif opt.dataset_name == 'babel':
+        opt.data_root = pjoin(opt.data_base, 'babel_272')
+        opt.motion_dir = pjoin(opt.data_root, 'motion_data')
+        opt.text_dir = pjoin(opt.data_root, 'texts')
+        opt.joints_num = 22
+        opt.dim_pose = 272
+        opt.max_motion_length = 300
+        opt.max_motion_frame = 300
+        opt.max_motion_token = 55
     elif opt.dataset_name == 'kit':
         opt.data_root = './dataset/KIT-ML/'
         opt.motion_dir = pjoin(opt.data_root, 'rep135')

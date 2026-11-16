@@ -197,6 +197,10 @@ def eval_molingo_ms(val_loader, model_without_ddp, vae_model, ep, cfg,
                                                              cfg_schedule="constant", labels=clip_text,
                                                              temperature=temperature, acc_ratio=acc_ratio)
             feats_rst = vae_model.decode(sampled_tokens / std_factor)
+            if feats_rst.shape[1] < token_len:
+                feats_rst = torch.cat([feats_rst,
+                                       torch.zeros(bs, token_len - feats_rst.shape[1], feats_rst.shape[2],
+                                                   device=feats_rst.device, dtype=feats_rst.dtype)], dim=1)
 
         et_tmr_pred, em_tmr_pred = textencoder(clip_text).loc, motionencoder(feats_rst, m_length).loc
         et_tmr, em_tmr = textencoder(clip_text).loc, motionencoder(feats_ref, m_length).loc
