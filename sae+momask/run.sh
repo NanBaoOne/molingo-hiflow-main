@@ -13,11 +13,16 @@ SEED="${SEED:-3407}"
 LSA_WEIGHT="${LSA_WEIGHT:-0.001}"
 RUN_DIR="${RUN_DIR:-$HERE/runs/lsa${LSA_WEIGHT}_momask272_s${SEED}}"
 mkdir -p "$RUN_DIR"
+bounded() {
+    local label="$1"; shift
+    "$PYTHON" -u log_stream.py --file "$RUN_DIR/${label}.log" \
+        --max-mb "${LOG_MAX_MB:-20}" --backups "${LOG_BACKUPS:-2}" -- "$@"
+}
 COMMON=(--data-root "${DATA_ROOT:-/mnt/user/lh3/MotionStreamer-main/humanml3d_272}"
         --evaluator "${EVALUATOR:-/mnt/user/lh3/MotionStreamer-main/Evaluator_272/epoch=99.ckpt}"
         --eval-text-model "${EVAL_TEXT_MODEL:-distilbert-base-uncased}"
         --run-dir "$RUN_DIR" --lsa-weight "$LSA_WEIGHT" --seed "$SEED"
-        --workers "${WORKERS:-8}" --device "${DEVICE:-cuda:0}"
+        --workers "${WORKERS:-8}" --device "${DEVICE:-cuda:0}" --log-seconds "${LOG_SECONDS:-60}"
         --precision "${PRECISION:-auto}"
         --sample-steps "${SAMPLE_STEPS:-18}" --cfg "${CFG:-4}" --res-cfg "${RES_CFG:-5}")
 if [[ -n "${BABEL_DIR:-}" ]]; then COMMON+=(--babel-dir "$BABEL_DIR"); fi
@@ -29,24 +34,23 @@ run_stage() {
     local extras=()
     if [[ -f "$RUN_DIR/$stage/latest.pt" ]]; then extras+=(--resume); fi
     if [[ "$stage" == vq && -n "${INIT_VQ:-}" ]]; then extras+=(--init-vq "$INIT_VQ"); fi
-    "$PYTHON" -u train.py --stage "$stage" "${COMMON[@]}" --steps "$steps" --batch-size "$batch" \
+    bounded "$stage" "$PYTHON" -u train.py --stage "$stage" "${COMMON[@]}" --steps "$steps" --batch-size "$batch" \
         --eval-every "${EVAL_EVERY:-10000}" --save-every "${SAVE_EVERY:-2000}" \
         --memory-fraction "${MEMORY_FRACTION:-0.88}" --max-auto-batch "${MAX_AUTO_BATCH:-1024}" \
-        "${extras[@]}" 2>&1 | tee -a "$RUN_DIR/${stage}.log"
+        "${extras[@]}"
 }
 evaluate() {
-    "$PYTHON" -u train.py --stage eval "${COMMON[@]}" --repeat "${REPEAT:-20}" \
-        --split "${SPLIT:-test}" --num-res-layers "${NUM_RES_LAYERS:--1}" \
-        2>&1 | tee -a "$RUN_DIR/eval.log"
+    bounded eval "$PYTHON" -u train.py --stage eval "${COMMON[@]}" --repeat "${REPEAT:-20}" \
+        --split "${SPLIT:-test}" --num-res-layers "${NUM_RES_LAYERS:--1}"
 }
 case "$MODE" in
-    check) "$PYTHON" -u train.py --stage check "${COMMON[@]}" ;;
+    check) bounded check "$PYTHON" -u train.py --stage check "${COMMON[@]}" ;;
     vq) run_stage vq "${VQ_STEPS:-50000}" "${VQ_BATCH:-auto}" ;;
     mask) run_stage mask "${MASK_STEPS:-100000}" "${MASK_BATCH:-auto}" ;;
     res) run_stage res "${RES_STEPS:-100000}" "${RES_BATCH:-auto}" ;;
     eval) evaluate ;;
     all)
-        "$PYTHON" -u train.py --stage check "${COMMON[@]}"
+        bounded check "$PYTHON" -u train.py --stage check "${COMMON[@]}"
         run_stage vq "${VQ_STEPS:-50000}" "${VQ_BATCH:-auto}"
         run_stage mask "${MASK_STEPS:-100000}" "${MASK_BATCH:-auto}"
         run_stage res "${RES_STEPS:-100000}" "${RES_BATCH:-auto}"

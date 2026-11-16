@@ -17,7 +17,7 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from progress import tqdm
 from components import SemanticRVQ, build_vq, build_transformer, pack_ema, restore_ema
 from data272 import Motion272
 
@@ -34,6 +34,7 @@ def parse_args():
     p.add_argument('--steps', type=int, default=100000)
     p.add_argument('--batch-size', default='auto', help='auto or positive integer; use same value in matched ablations')
     p.add_argument('--workers', type=int, default=8)
+    p.add_argument('--log-seconds', type=float, default=60., help='Persistent progress record interval')
     p.add_argument('--prefetch-factor', type=int, default=2)
     p.add_argument('--lr', type=float, default=2e-4)
     p.add_argument('--warmup', type=int, default=2000)
@@ -323,13 +324,13 @@ def train(a):
         torch.cuda.reset_peak_memory_stats()
     num_steps = 4 if a.probe else a.steps
     began = time.monotonic()
+    last_progress = began
     measured_start = began
     model.train()
     if a.stage != 'vq':
         model.clip_model.eval()
     bar = tqdm(range(start, num_steps), desc=f'{a.stage} training', initial=start, total=num_steps,
                dynamic_ncols=True, disable=a.probe)
-    log_path = out / 'train.csv'
 
     def save(step, name):
         value = dict(model=state_without_clip(model), optimizer=optimizer.state_dict(), scaler=scaler.state_dict(),
@@ -370,18 +371,25 @@ def train(a):
         eta = elapsed / max(1, step-start) * max(0, a.steps-step)
         gpu_gb = torch.cuda.max_memory_allocated()/2**30 if a.device.startswith('cuda') else 0
         loss_value = float(loss.detach())
-        bar.set_postfix(loss=f'{loss_value:.4f}', lr=f'{lr:.2g}', GPU=f'{gpu_gb:.1f}GiB', ETA=f'{eta/3600:.2f}h')
-        if step % 20 == 0 or step == 1:
-            row = dict(step=step, loss=loss_value, lr=lr, elapsed_s=elapsed, eta_s=eta, gpu_peak_gib=gpu_gb, **details)
-            exists = log_path.exists()
-            with log_path.open('a', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=list(row))
-                if not exists:
-                    writer.writeheader()
-                writer.writerow(row)
+        bar.set_postfix(loss=f'{loss_value:.4f}', lr=f'{lr:.2g}', GPU=f'{gpu_gb:.1f}GiB', ETA=f'{eta/3600:.2f}h', refresh=False)
+        now = time.monotonic()
+        if step == start+1 or step == a.steps or now-last_progress >= a.log_seconds:
+            print(f'TRAIN_PROGRESS stage={a.stage} step={step}/{a.steps} progress={100*step/a.steps:.1f}% '
+                  f'loss={loss_value:.5f} lr={lr:.3g} GPU_peak={gpu_gb:.2f}GiB '
+                  f'elapsed={elapsed/3600:.2f}h ETA={eta/3600:.2f}h', flush=True)
+            last_progress = now
         if step % a.save_every == 0 or step == a.steps:
             optimizer.zero_grad(set_to_none=True)
             value = validate(a, model, vq)
+            validation = dict(stage=a.stage, step=step, loss=value)
+            print('VALIDATION_LOSS '+json.dumps(validation), flush=True)
+            validation_path = out / 'validation_loss.csv'
+            exists = validation_path.exists()
+            with validation_path.open('a', newline='') as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(validation))
+                if not exists:
+                    writer.writeheader()
+                writer.writerow(validation)
             if value < best:
                 best = value
                 save(step, 'best.pt')

@@ -2,6 +2,9 @@
 import sys
 import types
 from pathlib import Path
+from progress import install
+
+install()
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent

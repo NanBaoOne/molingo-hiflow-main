@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from progress import tqdm
 from data272 import Motion272
 
 
@@ -106,7 +106,7 @@ def evaluate(args, vq, mask=None, residual=None, *, split='val', repeat=0, num_r
                   real_top3=float(real_correct[2]/count), real_matching_distance=real_matching/count,
                   embedding_normalized=False, dataset_report=dataset.report,
                   num_res_layers=num_res_layers if residual is not None else (0 if mask is not None else 'all'))
-    print(json.dumps(result, ensure_ascii=False), flush=True)
+    print('EVAL_METRICS '+json.dumps(result, ensure_ascii=False), flush=True)
     del text_encoder, motion_encoder
     gc.collect()
     if torch.cuda.is_available():

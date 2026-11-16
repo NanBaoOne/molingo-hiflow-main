@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import types
 import unittest
@@ -64,6 +65,37 @@ class ExperimentTests(unittest.TestCase):
         manifest = json.loads((HERE/'UPSTREAM.json').read_text())
         for path, expected in manifest['files'].items():
             self.assertEqual(hashlib.sha256((HERE/'vendor/momask'/path).read_bytes()).hexdigest(), expected)
+
+    def test_file_logs_only_keep_metrics_and_validation_loss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp)/'train.log'
+            code = "print('ordinary setup'); print('10%|bar\\r20%|bar'); print('TRAIN_PROGRESS step=1'); print('VALIDATION_LOSS loss=0.1'); print('EVAL_METRICS fid=1.0')"
+            result = subprocess.run([sys.executable,str(HERE/'log_stream.py'),'--file',str(log),'--',sys.executable,'-c',code],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            content = log.read_text()
+            self.assertIn('VALIDATION_LOSS',content)
+            self.assertIn('EVAL_METRICS',content)
+            for unwanted in ('ordinary','TRAIN_PROGRESS','%|bar'):
+                self.assertNotIn(unwanted,content)
+                self.assertNotIn(unwanted,result.stdout)
+
+    def test_log_rotation_is_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp)/'train.log'
+            code = "for _ in range(500): print('EVAL_METRICS '+ 'x'*8192)"
+            result = subprocess.run([sys.executable,str(HERE/'log_stream.py'),'--file',str(log),'--max-mb','1','--backups','2','--',sys.executable,'-c',code],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            files = list(Path(tmp).glob('train.log*'))
+            self.assertEqual(len(files),3)
+            self.assertTrue(all(p.stat().st_size <= 1024*1024 for p in files))
+
+    def test_failures_go_to_separate_error_log(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp)/'train.log'
+            result = subprocess.run([sys.executable,str(HERE/'log_stream.py'),'--file',str(log),'--',sys.executable,'-c',"raise RuntimeError('example failure')"],capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertNotIn('example failure',log.read_text())
+            self.assertIn('example failure',Path(str(log)+'.error.log').read_text())
 
     def test_semantic_and_native_rvq_backward(self):
         model = SemanticRVQ(CONFIG)

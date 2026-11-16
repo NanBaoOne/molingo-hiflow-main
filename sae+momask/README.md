@@ -71,7 +71,12 @@ CLIP `ViT-B/32` 和 DistilBERT 使用服务器已有缓存，缓存不存在时�
   它不保证恰好占满46GB；训练速度与安全余量优先于无意义地占满显存。
 - 默认支持时用 BF16，否则 FP16 + GradScaler；RVQ量化/EMA与距离计算保持 FP32。
   支持TF32、多worker、pinned memory、持久worker；正式训练不启用anomaly detection。
-- 每阶段有 tqdm 进度、step、loss、学习率、显存峰值和预计剩余时间；日志输出到run目录。
+- 交互终端显示 tqdm 进度、step、loss、学习率、显存峰值和预计剩余时间。
+  文件日志只记录 `VALIDATION_LOSS` 与 `EVAL_METRICS`，不保存进度条和逐步训练输出。
+  验证损失另存为 `validation_loss.csv`；最终评估仍有JSON/CSV结果文件。
+  `.log` 默认每个20MiB、保留2个备份，可由 `LOG_MAX_MB/LOG_BACKUPS` 调整。
+  异常诊断单独写入 `.error.log`；不会清理已有的旧日志。
+  `nohup` 后台运行没有交互终端，自动关闭动态条；想持续看进度可在 tmux 中直接运行脚本。
   初始ETA不包括尚未测量的其他阶段和最终重复评估，运行一段时间后更稳定。
 - 不自动按batch改变学习率；固定step预算下batch变化会改变样本曝光量，消融必须固定各阶段batch。
 - 如其他任务占显存，先让出该GPU或显式设较小batch；自动探测不能预测外部任务后续显存变化。
