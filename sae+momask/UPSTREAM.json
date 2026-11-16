@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/EricGuo5513/momask-codes",
+  "commit": "94a6636c9c463b7a9414c3401a6f1b67e6c51824",
+  "files": {
+    "LICENSE": "89d4bed7dc369fecd1788de4be01931740fa96558aa0a4edc0d254d7850bf4a7",
+    "models/mask_transformer/tools.py": "b18c6bd32d9dd13b54f5900bf3c8965c15d8e1e5c09c14e9bc59f6a3324583d1",
+    "models/mask_transformer/transformer.py": "5c9c44b4699fe3660f8a024d70da25e48d661a01e72a3a0e0107a2c00fcb46b0",
+    "models/vq/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "models/vq/encdec.py": "ad3da666bc57397b3bf941fa06a3739f26d6cb24fe22b5d2b4f1ed5a95625c2e",
+    "models/vq/model.py": "f6c80b24ddfec75724bd88ccd15fb87cbcf53f89ad5f011b22bd779244a0071f",
+    "models/vq/quantizer.py": "76d853dc0e1b77fbc12d036f715dd51feb00b70a8dc6c9f942306a0b7e0babca",
+    "models/vq/residual_vq.py": "89c40279b6af3e08f95afbad00721394bf68da60d7d85090b931813fa47f7d15",
+    "models/vq/resnet.py": "16ec902b0f5a5a2a6556bf21bfae50bdff28c0192cd83fbc93837f5dd914a795",
+    "models/vq/vq_trainer.py": "e643d39497d8a60961f0d07c939d7bda6003f0f365ece3c6246068a40cd6d3f3"
+  }
+}

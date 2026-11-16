@@ -1,0 +1,12 @@
+# Reuse the working CUDA PyTorch + MoLingo/HiFlow environment on the server.
+# Do NOT install/replace CUDA PyTorch with this file.
+einops>=0.6.1
+tqdm>=4.66
+# The sibling metric implementation uses sqrtm(..., disp=False).
+scipy>=1.10,<1.18
+ftfy
+regex
+# Required existing packages: torch>=2.3, numpy, transformers, pytorch-lightning,
+# torchvision and the OpenAI CLIP package (NOT the unrelated PyPI `clip`).
+# If OpenAI CLIP is missing:
+# python -m pip install git+https://github.com/openai/CLIP.git
